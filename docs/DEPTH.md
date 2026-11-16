@@ -14,6 +14,7 @@
 | M5 争议隔离 | 定位冲突和无法合法冲销事件 | `GET /api/quarantine` | `app/modules/m5_quarantine/service.py` `app/modules/m5_quarantine/rules.py` | `tests/test_quarantine.py` |
 | M6 渠道对账 | 逐渠道复算账单差额 | `GET /api/reconcile` | `app/modules/m6_reconcile/service.py` `app/modules/m6_reconcile/rules.py` | `tests/test_reconcile.py` |
 | M7 批次复核 | 幂等重算与版本归档 | `GET /api/batches` | `app/modules/m7_batches/service.py` `app/modules/m7_batches/rules.py` | `tests/test_batches.py` |
+| M8 账期裁决 | 关账冻结原账，迟到差额计入本期 | `GET /periods` | `app/modules/m8_period/service.py` `app/modules/m8_period/rules.py` | `tests/test_period.py` |
 
 ## 陷阱登记
 
@@ -29,6 +30,9 @@
 | TRAP-14 | 重复回调和键冲突 | 静默误算或覆盖证据 | 全字段比较，相同去重冲突隔离 | `app/modules/m2_contract/rules.py` | `tests/test_contract.py::test_duplicate` |
 | TRAP-19 | 机器人和频次规则同时命中 | 静默误算或覆盖证据 | 机器人优先且不消耗频次 | `app/modules/m3_model/rules.py` | `tests/test_model.py::test_priority` |
 | TRAP-26 | 陈旧复核覆盖新版本 | 静默误算或覆盖证据 | revision条件更新 | `app/modules/m7_batches/rules.py` | `tests/test_batches.py::test_stale` |
+| TRAP-31 | 关账后迟到记录回改原账期 | 已发布账期被篡改、差额无限挂账 | 原账冻结只读，差额由本期承担并逐行留痕 | `app/modules/m8_period/rules.py` | `tests/test_period.py::test_delta_borne_by_current_period` |
+| TRAP-32 | 同批补交重试产生新待复核版本 | 待复核堆积、旧结论被覆盖 | 内容+账期+关账摘要幂等，失败回滚保留旧版 | `app/modules/m8_period/service.py` `app/store.py` | `tests/test_period.py::test_idempotent_same_batch_single_pending` |
+| TRAP-33 | 补交失败丢失来源记录 | 审计无法还原 | 非法行进隔离保留来源行，行数守恒校验 | `app/modules/m8_period/rules.py` | `tests/test_period.py::test_illegal_records_quarantined_not_lost` |
 
 ## 对账规则
 原始行=采信事件+无效曝光+重复回调+其他隔离+空行。原始费用-合法扣减=应付。CPM单位为CNY/千次，先按渠道和北京时间账日求和，再HALF_UP舍入到分。扣减额采用原始舍入总额与净额之差，保证分币守恒。机器事件优先于频次，机器事件不消耗频次；频次按渠道、账日、用户计数。冲销事件本身不计曝光，不占频次，须不早于原事件且渠道相同。ID保留为字符串。

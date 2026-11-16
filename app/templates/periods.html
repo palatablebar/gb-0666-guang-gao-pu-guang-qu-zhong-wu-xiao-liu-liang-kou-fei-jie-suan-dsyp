@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+{% block scripts %}<script src="/static/period.js" defer></script>{% endblock %}
+{% block panels %}
+<section class="panel report-table">
+  <div class="panel__head"><h2>关账期快照（原账金额·只读）</h2><span>{{ period.closures|length }} 个已关账期</span></div>
+  <div class="panel__body flush">
+    <div class="table-scroll"><table class="ledger"><thead><tr><th>账期</th><th>原始费用 / 元</th><th>合法扣减 / 元</th><th>原账应付 / 元</th><th>发布运行</th><th>版本</th><th>结论</th></tr></thead><tbody>
+    {% for c in period.closures %}
+      <tr><td>{{ c.period }}</td><td class="num">{{ c.frozen_gross }}</td><td class="num">{{ c.frozen_credit }}</td><td class="num">{{ c.frozen_net }}</td><td title="{{ c.run_id }}">{{ c.run_id }}</td><td class="num">{{ c.revision }}</td><td>{{ c.decision }}</td></tr>
+    {% else %}
+      <tr><td colspan="7">尚未关账。在右侧执行关账后，原账金额将冻结并长期可查。</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  </div>
+</section>
+<section class="panel controls">
+  <div class="panel__head"><h2>关账与补交</h2><span>差额由本期承担</span></div>
+  <div class="panel__body">
+    <form id="close-form">
+      <label>关账账期<input name="period" value="2026-11" inputmode="numeric" required></label>
+      <label>当前账期<input name="current_period" value="2026-12" inputmode="numeric" required></label>
+      <button class="action solid" type="submit">关账并冻结原账</button>
+    </form>
+    <form id="supplement-form" style="margin-top:18px;border-top:1px solid var(--line);padding-top:14px">
+      <label>补交样例<select name="sample"><option value="late">迟到记录与冲销</option><option value="dirty">含机器流量与冲销</option><option value="clean">有效曝光与一次冲销</option><option value="gb18030">历史导出编码</option></select></label>
+      <details><summary>粘贴补交 CSV</summary><textarea name="text" rows="3" aria-label="补交CSV"></textarea></details>
+      <label>关账账期<input name="period" value="2026-11" inputmode="numeric" required></label>
+      <label>承担账期（本期）<input name="current_period" value="2026-12" inputmode="numeric" required></label>
+      <button class="action solid" type="submit">提交补交裁决</button>
+    </form>
+    <p id="period-feedback" role="status" aria-live="polite" style="color:var(--bad);font-size:12px;min-height:18px"></p>
+  </div>
+</section>
+{% set s=period.selected %}
+<section class="panel report-table">
+  <div class="panel__head"><h2>逐渠道裁决：原账金额 → 差额来源 → 本次应付</h2>{% if s %}<span>{{ s.supplement_id }} · V{{ s.revision }} · {{ s.decision }}</span>{% endif %}</div>
+  <div class="panel__body flush">
+    {% if s %}
+    <div class="table-scroll"><table class="ledger"><thead><tr><th>渠道</th><th>原账应付（冻结）</th><th>迟到新增</th><th>迟到扣减</th><th>差额（计入本期）</th><th>本期原始</th><th>本期扣减</th><th>本期净额</th><th>本次正式应付</th></tr></thead><tbody>
+    {% for ch in s.channels %}
+      <tr><td>{{ ch.channel }}</td><td class="num">{{ ch.frozen_net }}</td><td class="num">{{ ch.late_gross }}</td><td class="num">{{ ch.late_credit }}</td><td class="num">{{ ch.late_delta }}</td><td class="num">{{ ch.current_gross }}</td><td class="num">{{ ch.current_credit }}</td><td class="num">{{ ch.current_net }}</td><td class="num"><b>{{ ch.payable }}</b></td></tr>
+    {% endfor %}
+    </tbody></table></div>
+    {% else %}
+    <p style="padding:16px">暂无补交批次。</p>
+    {% endif %}
+  </div>
+</section>
+<section class="panel distribution">
+  <div class="panel__head"><h2>账期承担汇总</h2>{% if s %}<span class="square-status {{ 'pass' if s.amount_ok and s.count_ok else 'severe' }}">{{ '守恒通过' if s.amount_ok and s.count_ok else '校验失败' }}</span>{% endif %}</div>
+  <div class="panel__body">
+    {% if s %}
+    <div class="audit-line"><span>关账账期 {{ s.period }} 原账应付（不变）</span><b>{{ s.totals.frozen_net }} 元</b></div>
+    <div class="audit-line"><span>差额来源合计（迟到记录/冲销）</span><b>{{ s.totals.late_delta }} 元</b></div>
+    <div class="audit-line"><span>本期 {{ s.current_period }} 自身净额</span><b>{{ s.totals.current_net }} 元</b></div>
+    <div class="audit-line"><span>本次正式应付（差额由本期承担）</span><b>{{ s.totals.payable }} 元</b></div>
+    <div class="audit-line"><span>金额守恒（本期净额＋差额＝应付）</span><b>{{ '通过' if s.amount_ok else '失败' }}</b></div>
+    <div class="audit-line"><span>行数守恒（记录零丢失）</span><b>{{ '通过' if s.count_ok else '失败' }}</b></div>
+    <form id="supplement-review" data-id="{{ s.supplement_id }}" data-version="{{ s.revision }}" style="display:flex;gap:12px;margin-top:14px;border-top:1px solid var(--line);padding-top:13px">
+      <select name="decision" style="flex:1"><option>通过</option><option>退回</option></select>
+      <button class="action" type="submit">保存复核</button>
+    </form>
+    {% else %}
+    <p>关账并补交后在此查看裁决。</p>
+    {% endif %}
+  </div>
+</section>
+<section class="panel report-table">
+  <div class="panel__head"><h2>差额来源明细</h2><input class="filter" type="search" placeholder="筛选来源" aria-label="筛选来源"></div>
+  <div class="panel__body flush">
+    {% if s %}
+    <div class="table-scroll"><table class="ledger"><thead><tr><th>来源行</th><th>事件ID</th><th>渠道</th><th>类型</th><th>引用原曝光</th><th>入账账期</th><th>原始差额 / 元</th></tr></thead><tbody>
+    {% for src in s.sources %}
+      <tr><td class="num">{{ src.line }}</td><td>{{ src.event_id }}</td><td>{{ src.channel }}</td><td>{{ src.kind }}</td><td>{{ src.get('ref','—') }}</td><td>{{ s.period if src.phase=='late' else s.current_period }}</td><td class="num">{{ src.delta_raw }}</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+    {% else %}<p style="padding:16px">无</p>{% endif %}
+  </div>
+</section>
+<section class="panel report-table">
+  <div class="panel__head"><h2>无效曝光（机器/超限，保留记录不计金额）</h2></div>
+  <div class="panel__body flush">
+    {% if s %}
+    <div class="table-scroll"><table class="ledger"><thead><tr><th>来源行</th><th>事件ID</th><th>原因码</th><th>渠道</th><th>账日</th></tr></thead><tbody>
+    {% for v in s.invalid %}
+      <tr><td class="num">{{ v.line }}</td><td>{{ v.event_id }}</td><td>{{ v.code }}</td><td>{{ v.channel }}</td><td>{{ v.day }}</td></tr>
+    {% else %}<tr><td colspan="5">无无效记录</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+    {% else %}<p style="padding:16px">无</p>{% endif %}
+  </div>
+</section>
+<section class="panel report-table">
+  <div class="panel__head"><h2>补交隔离（失败/非法记录保留，不计金额）</h2><input class="filter" type="search" placeholder="筛选记录" aria-label="筛选记录"></div>
+  <div class="panel__body flush">
+    {% if s %}
+    <div class="table-scroll"><table class="ledger"><thead><tr><th>来源行</th><th>原因码</th><th>原始记录</th></tr></thead><tbody>
+    {% for q in s.quarantine %}
+      <tr><td class="num">{{ q.line }}</td><td>{{ q.code }}</td><td title="{{ q.raw }}">{{ q.raw }}</td></tr>
+    {% else %}<tr><td colspan="3">无隔离记录</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+    {% else %}<p style="padding:16px">无</p>{% endif %}
+  </div>
+</section>
+<section class="panel report-table">
+  <div class="panel__head"><h2>补交批次历史（同批重试不新增待复核版本）</h2></div>
+  <div class="panel__body flush">
+    <div class="table-scroll"><table class="ledger"><thead><tr><th>批次</th><th>关账账期</th><th>差额 / 元</th><th>本次应付 / 元</th><th>版本</th><th>结论</th><th>创建时间</th></tr></thead><tbody>
+    {% for h in period.supplements %}
+      <tr><td title="{{ h.digest }}">{{ h.supplement_id }}</td><td>{{ h.closure_period }}</td><td class="num">{{ h.totals.late_delta }}</td><td class="num">{{ h.totals.payable }}</td><td class="num">{{ h.revision }}</td><td>{{ h.decision }}</td><td>{{ h.created_at }}</td></tr>
+    {% else %}<tr><td colspan="7">暂无补交批次</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+  </div>
+</section>
+{% endblock %}
